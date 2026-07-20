@@ -1,5 +1,6 @@
 #include <iostream>
 #include <math.h>
+#include <assert.h>
 #include <vector>
 #include <Eigen/Eigen>
 
@@ -28,6 +29,10 @@ double d_linear(double x) {
 }
 double d_tanh(double x) {
 	return (1 - std::pow(std::tanh(x),2));
+}
+
+double _sign(double x) {
+	return (!signbit(x)) * 2.0 - 1.0;
 }
 
 class deriv_func {
@@ -65,16 +70,14 @@ public:
 
 	deriv_func activ_f;
 
-	Dense(size_t in_dim,size_t out_dim,deriv_func activation):activ_f(activation) {
+	Dense(size_t in_dim,size_t out_dim,deriv_func activation = act::linear):activ_f(activation) {
 		weights = Eigen::MatrixXd(out_dim,in_dim);
 		biases = Eigen::VectorXd(out_dim);
 		weights.setRandom();
 		biases.setRandom();
 		w_grad_sum = weights;
 		b_grad_sum = biases;
-		w_grad_sum.setZero();
-		b_grad_sum.setZero();
-		grad_samples = 0;
+		reset_gradients();
 	}
 	inline Eigen::VectorXd forward(const Eigen::VectorXd& in) {
 		return activ_f(weights * in + biases);
@@ -103,8 +106,8 @@ public:
 			reset_gradients();
 		}
 	}
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) { // returns the partial gradients to flow back and 
-		assert(flow_back.size() == biases.size()); // "flow_back partial gradients vector size doesnt match out_dim";
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) { // returns the partial derivative of the cost in respect to input vector
+		assert(flow_back.size() == biases.size()); // "flow_back partial gradients vector dim must match out_dim";
 		Eigen::VectorXd pd_act_lin = linear.unaryExpr(activ_f.deriv);
 		Eigen::VectorXd pd_fb_lin = pd_act_lin.array() * flow_back.array();
 		
@@ -113,32 +116,44 @@ public:
 
 		grad_samples++;
 
-		return pd_fb_lin; // not finished
+		Eigen::VectorXd ret_flow_back;
+		ret_flow_back.resize(weights.rows());
+
+		for(int i = 0; i < weights.cols(); i++) {
+			ret_flow_back(i) = (pd_fb_lin.array() * weights.col(i).array()).sum();
+		}
+
+		return ret_flow_back;
 	}
 };
 
 int main() {
 	auto layer0 = Dense(2,2,act::linear);
+	auto layer1 = Dense(2,2,act::linear);
 
 	// simple test dataset
-	vector<Eigen::Vector2d> x = {{1,0},{-1,1},{0,1},{0,0}},y = {{0,1},{1,-1},{1,0},{0,0}};
+	vector<Eigen::Vector2d> x = {{1,0},{-1,1},{0,1},{0,0},{0.1,0.5}},y = {{0,1},{1,-1},{1,0},{0,0},{0.5,0.1}};
 	
 	for(int epoch = 0; epoch < 10000; epoch++) {
 		double cost = 0;
 
 		for(int i = 0; i < x.size(); i++) {
-			auto out = layer0(x[i],true); // run for compute_gradients
-			Eigen::VectorXd error = 2 * (out-y[i]); // mean squared error;
-			Eigen::VectorXd _err = (out-y[i]).array()*(out - y[i]).array(); // mean squared error;
+			auto out = layer1(layer0(x[i],true),true); // run for compute_gradients
+			Eigen::VectorXd error = 2*(out-y[i]); // mean squared error derivative;
+			Eigen::VectorXd _err = (out-y[i]).array().pow(2); // mse
 			cost += _err.sum();
-			layer0.compute_gradients(error);
-			
+			layer0.compute_gradients(layer1.compute_gradients(error));
 		}
-		cout << "epoch=" << epoch << " cost=" << cost << endl;
-		layer0.apply_gradients(0.01);
+		cost = cost / x.size();
+		if(epoch % 100 == 0) {
+			cout << "epoch=" << epoch << " cost=" << cost << endl;
+		}
+		layer0.apply_gradients(0.3);
+		layer1.apply_gradients(0.3);
 	}
 
-	cout << "weights matrix: " << endl << layer0.weights << endl;
-	cout << "biases vector: " << endl << layer0.biases << endl;
+	cout << "layer0 weights matrix: " << endl << layer0.weights << endl;
+	cout << "layer0 biases vector: " << endl << layer0.biases << endl;
+	cout << "output: " << endl << layer1(layer0(x[1])) << endl;
 
 }
