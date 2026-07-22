@@ -81,7 +81,7 @@ public:
 	virtual Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) = 0;
 	virtual void reset_gradients() = 0;
 	virtual void apply_gradients(double lr) = 0;
-	virtual Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = true) = 0;  // returns the partial derivative of the cost in respect to input vector
+	virtual Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) = 0;  // returns the partial derivative of the cost in respect to input vector
 };
 
 class Dense : public Pass {
@@ -138,7 +138,7 @@ public:
 			reset_gradients();
 		}
 	}
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = true) override { // returns the partial derivative of the cost in respect to input vector
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override { // returns the partial derivative of the cost in respect to input vector
 		assert(flow_back.size() == biases.size()); // "flow_back partial gradients vector dim must match out_dim";
 		Eigen::VectorXd pd_act_lin = linear.unaryExpr(activ_f.deriv);
 		Eigen::VectorXd pd_fb_lin = pd_act_lin.array() * flow_back.array();
@@ -155,10 +155,8 @@ public:
 		Eigen::VectorXd ret_flow_back;
 		ret_flow_back.resize(weights.cols());
 
-		if(compute_flow_back) {
-			for(int i = 0; i < weights.cols(); i++) {
-				ret_flow_back(i) = (pd_fb_lin.array() * weights.col(i).array()).sum();
-			}
+		for(int i = 0; i < weights.cols(); i++) {
+			ret_flow_back(i) = (pd_fb_lin.array() * weights.col(i).array()).sum();
 		}
 
 		return ret_flow_back;
@@ -177,7 +175,7 @@ class Softmax : public Pass {
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		double dot = activation.dot(flow_back);
 		return activation.array() * (flow_back.array() - dot);
 	}
@@ -194,7 +192,7 @@ class ReLU : public Pass {
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		return flow_back.array()*in_activation.unaryExpr(&d_relu).array();
 	}
 };
@@ -210,7 +208,7 @@ class Tanh : public Pass {
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		return flow_back.array() * activation.unaryExpr(&d_tanh).array();
 	}
 };
@@ -226,7 +224,7 @@ class Sigmoid : public Pass {
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		return flow_back.array() * activation.unaryExpr(&d_sigmoid).array();
 	}
 };
@@ -245,7 +243,7 @@ public:
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		return flow_back.array() * in_activation.unaryExpr([this](double x) { return x >= 0.0 ? 1.0 : coeff; } ).array();
 	}
 };
@@ -260,12 +258,12 @@ public:
 	}
 	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
 		mask.setRandom(in.size());
-		mask.unaryExpr([this](double x) { return (((x + 1) * 0.5) < prob ? 0.0 : 1.0); });
+		mask = mask.unaryExpr([this](double x) { return (((x + 1) * 0.5) < prob ? 0.0 : 1.0); });
 		return mask.array()*in.array();
 	}
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) override {
 		return flow_back.array() * mask.array();
 	}
 };
@@ -287,11 +285,12 @@ public:
 		}
 		return pass;
 	} 
-	void compute_gradients(const Eigen::VectorXd& pd_cost_act) {
-		Eigen::VectorXd flow_back = pd_cost_act;
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) {
+		Eigen::VectorXd _flow_back = flow_back;
 		for(int i = layers.size() - 1; i >= 0; i--) {
-			flow_back = layers[i]->compute_gradients(flow_back,i!=0);
+			_flow_back = layers[i]->compute_gradients(_flow_back);
 		}
+		return _flow_back;
 	}
 	void reset_gradients() {
 		for(auto l : layers) {

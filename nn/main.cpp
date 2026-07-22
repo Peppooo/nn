@@ -11,14 +11,16 @@ using namespace std;
 mt19937 global_rng;
 
 int main() {
-	Sequential model = {{ // 784 - 128 - 64 - 32 - 10
-		new Dense(784,128,true),
+	Sequential model = {{
+		new Dense(784,256,true),
 		new ReLU(),
-		new Dense(128,64,true),
+		new Dropout(0.35),
+
+		new Dense(256,128,true),
 		new ReLU(),
-		new Dense(64,64,true),
-		new LeakyReLU(0.01),
-		new Dense(32,10),
+		new Dropout(0.2),
+
+		new Dense(128,10,true),
 		new Softmax()
 	}};
 
@@ -34,9 +36,9 @@ int main() {
 	mnist::read_images("C:\\Users\\pietr\\source\\repos\\neural-net\\training\\digits\\test-images.idx3-ubyte",test_X);
 	mnist::read_labels("C:\\Users\\pietr\\source\\repos\\neural-net\\training\\digits\\test-labels.idx1-ubyte",&test_Y,test_Y_labels);
 
-	int epochs = 100;
-	int batch_size = 128;
-	double lr = 0.001;
+	int epochs = 128;
+	int batch_size = 64;
+	double lr = 0.03;
 
 	vector<size_t> indecies(train_X.size(),0);
 	iota(indecies.begin(),indecies.end(),0ull);
@@ -49,11 +51,11 @@ int main() {
 		for(int _i = 0; _i < train_X.size(); _i += 1) {
 			auto i = indecies[_i];
 			auto pred = model.grad_forward(train_X[i]);
-			auto err = train_Y[i].array() / (-1*pred.array());
+			auto err = train_Y[i].array() / (-pred.array());
 			cost += -(pred.array().log()*train_Y[i].array()).sum();
 			model.compute_gradients(err);
 
-			if(_i % batch_size == 0) {
+			if(_i % batch_size == 0 && _i != 0) {
 				model.apply_gradients(lr);
 			}
 		}
@@ -77,7 +79,10 @@ int main() {
 			pred.maxCoeff(&pred_label);
 			train_correct += (pred_label == train_Y_labels[i]);
 		}
-
+		cost /= train_X.size();
 		cout << "epoch " << epoch << " cost " << cost << " test accuracy " << test_correct / (double)accuracy_tests << " train accuracy " << train_correct / (double)accuracy_tests << endl;
+		if((test_correct / (double)accuracy_tests) > 0.97)
+			break;
+
 	}
 }
