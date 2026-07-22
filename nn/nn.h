@@ -10,12 +10,13 @@ double _relu(double x) {
 	return std::max(x,0.0);
 }
 double d_relu(double x) {
-	return x > 0 ? 1 : 0;
+	return x >= 0 ? 1 : 0;
 }
 #define K_LEAKY 0.001 // leaky relu coefficient
 double _lrelu(double x) {
 	return std::max(x,K_LEAKY * x);
 }
+
 double d_lrelu(double x) {
 	return x > 0 ? 1 : K_LEAKY;
 }
@@ -25,8 +26,26 @@ double _linear(double x) {
 double d_linear(double x) {
 	return 1;
 }
-double d_tanh(double x) {
+
+double _tanh(double x) {
+	return std::tanh(x);
+}
+
+double d_tanh(double y) {
+	return (1 - y*y);
+}
+
+double x_d_tanh(double x) {
 	return (1 - std::pow(std::tanh(x),2));
+}
+
+double _sigmoid(double x) {
+	return 1 / (1 + exp(-x));
+}
+
+double d_sigmoid(double y)
+{
+	return y * (1.0f - y);
 }
 
 double _sign(double x) {
@@ -47,7 +66,7 @@ public:
 namespace act {
 	const deriv_func relu{_relu,d_relu};
 	const deriv_func linear{_linear,d_linear};
-	const deriv_func tanh{std::tanh,d_tanh};
+	const deriv_func tanh{std::tanh,x_d_tanh};
 	const deriv_func leaky_relu{_lrelu,d_lrelu};
 }
 
@@ -60,28 +79,9 @@ public:
 	virtual Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = true) = 0;  // returns the partial derivative of the cost in respect to input vector
 };
 
-class Softmax : public Pass {
-	Eigen::VectorXd activation;
-	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
-		Eigen::ArrayXd ex = (in.array() - in.maxCoeff()).exp(); // avoids overflow without changing output since
-		return (ex / ex.sum());;
-	}
-	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
-		activation = forward(in);
-		return activation;
-	}
-	void reset_gradients() override {};
-	void apply_gradients(double lr) override {};
-	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
-		double dot = activation.dot(flow_back);
-		return activation.array() * (flow_back.array() - dot);
-	}
-};
-
 class Dense : public Pass {
 public:
 	Eigen::VectorXd linear;
-	Eigen::VectorXd activation;
 	Eigen::VectorXd in_activation;
 
 	Eigen::MatrixXd weights;
@@ -109,8 +109,7 @@ public:
 	inline Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
 		in_activation = in;
 		linear = weights * in + biases;
-		activation = activ_f(linear);
-		return activation;
+		return activ_f(linear);
 	}
 	inline void reset_gradients() override {
 		w_grad_mean.setZero();
@@ -150,6 +149,92 @@ public:
 		return ret_flow_back;
 	}
 };
+
+class Softmax : public Pass {
+	Eigen::VectorXd activation;
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		Eigen::ArrayXd ex = (in.array() - in.maxCoeff()).exp(); // avoids overflow without changing output since
+		return (ex / ex.sum());;
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		activation = forward(in);
+		return activation;
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		double dot = activation.dot(flow_back);
+		return activation.array() * (flow_back.array() - dot);
+	}
+};
+
+class ReLU : public Pass {
+	Eigen::VectorXd in_activation;
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		return in.unaryExpr(&_relu);
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		in_activation = in;
+		return forward(in);
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		return flow_back.array()*in_activation.unaryExpr(&d_relu).array();
+	}
+};
+
+class Tanh : public Pass {
+	Eigen::VectorXd activation;
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		return in.unaryExpr(&_tanh);
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		activation = forward(in);
+		return activation;
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		return flow_back.array() * activation.unaryExpr(&d_tanh).array();
+	}
+};
+
+class Sigmoid : public Pass {
+	Eigen::VectorXd activation;
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		return in.unaryExpr(&_sigmoid);
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		activation = forward(in);
+		return activation;
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		return flow_back.array() * activation.unaryExpr(&d_sigmoid).array();
+	}
+};
+
+class LeakyReLU : public Pass {
+	Eigen::VectorXd in_activation;
+	double coeff = 0;
+public:
+	LeakyReLU(double Coeff): coeff(Coeff) {};
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		return in.cwiseMax(in * coeff);
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		in_activation = in;
+		return forward(in);
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		return flow_back.array() * in_activation.unaryExpr([this](double x) { return x >= 0.0 ? 1.0 : coeff; }).array(); // TODO
+	}
+};
+
 
 class Sequential {
 public:

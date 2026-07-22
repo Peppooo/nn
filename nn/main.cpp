@@ -11,10 +11,12 @@ using namespace std;
 mt19937 global_rng;
 
 int main() {
-	Sequential model = {{ // 784 - 128 - 64 - 10
-		new Dense(784,32,act::relu),
-		new Dense(32, 32,act::relu),
-		new Dense( 32, 10,act::linear),
+	Sequential model = {{
+		new Dense(784,64),
+		new LeakyReLU(0.001),
+		new Dense(64,32),
+		new LeakyReLU(0.001),
+		new Dense(32,10),
 		new Softmax()
 	}};
 
@@ -31,13 +33,26 @@ int main() {
 	mnist::read_labels("C:\\Users\\pietr\\source\\repos\\neural-net\\training\\digits\\test-labels.idx1-ubyte",&test_Y,test_Y_labels);
 
 	int epochs = 1000;
-	int batch_size = 32;
+	int batch_size = 8;
 	double lr = 0.03;
 
 	vector<size_t> indecies(train_X.size(),0);
 	iota(indecies.begin(),indecies.end(),0ull);
 
 	for(int epoch = 0; epoch < epochs; epoch++) {
+
+		int accuracy_tests = 10000;
+		int correct = 0;
+
+		for(int i = 0; i < accuracy_tests; i++) {
+			auto pred = model.forward(test_X[i]);
+			uint8_t pred_label = 0;
+			pred.maxCoeff(&pred_label);
+			correct += (pred_label == test_Y_labels[i]);
+		}
+
+		cout << "epoch " << epoch << " test accuracy " << correct / (double)accuracy_tests << endl;
+
 		shuffle(indecies.begin(),indecies.end(),global_rng);
 		for(int _i = 0; _i < train_X.size(); _i += 1) {
 			auto i = indecies[_i];
@@ -54,16 +69,5 @@ int main() {
 
 		// compute accuracy
 
-		int accuracy_tests = 1000;
-		int correct = 0;
-
-		for(int i = 0; i < accuracy_tests; i++) {
-			auto pred = model.forward(test_X[i]);
-			uint8_t pred_label = 0;
-			pred.maxCoeff(&pred_label);
-			correct += (pred_label == test_Y_labels[i]);
-		}
-
-		cout << "epoch " << epoch << " accuracy " << correct/(double)accuracy_tests << endl;
 	}
 }
