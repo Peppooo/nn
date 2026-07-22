@@ -2,7 +2,12 @@
 #include <math.h>
 #include <assert.h>
 #include <vector>
+#include <random>
 #include <Eigen/Eigen>
+
+namespace nn_rand {
+	std::mt19937 global_rng{};
+}
 
 typedef double(*xy_func)(double);
 
@@ -94,10 +99,20 @@ public:
 
 	deriv_func activ_f;
 
-	Dense(size_t in_dim,size_t out_dim,deriv_func activation = act::linear):activ_f(activation) {
+	Dense(size_t in_dim,size_t out_dim,bool use_he_init = false,deriv_func activation = act::linear):activ_f(activation) {
 		weights = Eigen::MatrixXd(out_dim,in_dim);
 		biases = Eigen::VectorXd(out_dim);
-		weights.setRandom();
+		if(!use_he_init) {
+			weights.setRandom();
+		}
+		else {
+			std::normal_distribution<double> dist(0,sqrt(2.0/in_dim));
+			for(int i = 0; i < weights.cols(); i++) {
+				for(int j = 0; j < weights.rows(); j++) {
+					weights(j,i) = dist(nn_rand::global_rng);
+				}
+			}
+		}
 		biases.setRandom();
 		w_grad_mean = weights;
 		b_grad_mean = biases;
@@ -231,10 +246,29 @@ public:
 	void reset_gradients() override {};
 	void apply_gradients(double lr) override {};
 	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
-		return flow_back.array() * in_activation.unaryExpr([this](double x) { return x >= 0.0 ? 1.0 : coeff; }).array(); // TODO
+		return flow_back.array() * in_activation.unaryExpr([this](double x) { return x >= 0.0 ? 1.0 : coeff; } ).array();
 	}
 };
 
+class Dropout : public Pass {
+public:
+	double prob; // probability of a neuron to be set to zero (influence only grad_forward)
+	Eigen::VectorXd mask;
+	Dropout(double Probability):prob(Probability) {};
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		return in;
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& in) override {
+		mask.setRandom(in.size());
+		mask.unaryExpr([this](double x) { return (((x + 1) * 0.5) < prob ? 0.0 : 1.0); });
+		return mask.array()*in.array();
+	}
+	void reset_gradients() override {};
+	void apply_gradients(double lr) override {};
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back,bool compute_flow_back = false) override {
+		return flow_back.array() * mask.array();
+	}
+};
 
 class Sequential {
 public:
