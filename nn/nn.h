@@ -99,7 +99,9 @@ public:
 
 	deriv_func activ_f;
 
-	Dense(size_t in_dim,size_t out_dim,bool use_he_init = false,deriv_func activation = act::linear):activ_f(activation) {
+	double lambda_l2 = 0;
+
+	Dense(size_t in_dim,size_t out_dim,double Lambda_l2 = 0,bool use_he_init = false,deriv_func activation = act::linear):activ_f(activation),lambda_l2(Lambda_l2) {
 		weights = Eigen::MatrixXd(out_dim,in_dim);
 		biases = Eigen::VectorXd(out_dim);
 		if(!use_he_init) {
@@ -148,7 +150,7 @@ public:
 
 		double alpha = 1.0 / grad_samples;
 
-		w_grad_mean += alpha * (pd_fb_lin * in_activation.transpose() - w_grad_mean);
+		w_grad_mean += alpha * ((pd_fb_lin * in_activation.transpose()+lambda_l2*2*(weights)) - w_grad_mean);
 		b_grad_mean += alpha * (pd_fb_lin - b_grad_mean);
 
 
