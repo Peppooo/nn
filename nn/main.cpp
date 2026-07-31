@@ -13,17 +13,18 @@ mt19937 global_rng;
 
 int main() {
 	Sequential model = {{
-		new Dense(784,256,0.01,true),
+		new Dense(784,256),
 		new ReLU(),
 		new Dropout(0.4),
 
-		new Dense(256,128,0.01,true),
+		new Dense(256,128),
 		new ReLU(),
 		new Dropout(0.3),
 
-		new Dense(128,10,0.01,true),
-		new Softmax()
+		new Dense(128,10),
+		new Softmax(true)
 	}};
+
 
 	vector<Eigen::Vector<double,784>> train_X;
 	vector<Eigen::Vector<double,10>>  train_Y; vector<uint8_t> train_Y_labels;
@@ -37,9 +38,9 @@ int main() {
 	mnist::read_images("C:\\Users\\pietr\\source\\repos\\neural-net\\training\\digits\\test-images.idx3-ubyte",test_X);
 	mnist::read_labels("C:\\Users\\pietr\\source\\repos\\neural-net\\training\\digits\\test-labels.idx1-ubyte",&test_Y,test_Y_labels);
 
-	int epochs = 64;
+	int epochs = 128;
 	int batch_size = 64;
-	double lr = 0.1;
+	double lr = 0.03;
 
 	vector<size_t> indecies(train_X.size(),0);
 	iota(indecies.begin(),indecies.end(),0ull);
@@ -51,9 +52,9 @@ int main() {
 		for(int _i = 0; _i < train_X.size(); _i += 1) {
 			auto i = indecies[_i];
 			auto pred = model.grad_forward(train_X[i]);
-			auto err = train_Y[i].array() / (-pred.array()); // cross entropy error partial derivative
-			cost += -(pred.array().log()*train_Y[i].array()).sum(); // cross entropy error value
-			model.compute_gradients(err);
+			//auto err = train_Y[i].array() / (-pred.array()); // cross entropy error partial derivative
+			cost += -(model.forward(pred).array().log()*train_Y[i].array()).sum(); // cross entropy error value
+			model.compute_gradients(pred.array()-train_Y[i].array()); // cross entropy+softmax can be simplified to just y^-y
 
 			if(_i % batch_size == 0 && _i != 0) {
 				model.apply_gradients(lr);
