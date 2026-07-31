@@ -85,6 +85,7 @@ public:
 		fopen_s(&out_f,path.c_str(),"wb");
 		fwrite(data,sizeof(double),this->param_size(),out_f);
 		fclose(out_f);
+		delete[] data;
 	}
 	void load_model(std::string path) {
 		double* data = new double[this->param_size()];
@@ -97,6 +98,7 @@ public:
 		fread(data,sizeof(double),this->param_size(),in_f);
 		this->param_load(data);
 		fclose(in_f);
+		delete[] data;
 	}
 };
 
