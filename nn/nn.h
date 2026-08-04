@@ -194,6 +194,70 @@ public:
 	}
 };
 
+class LayerNorm : public Pass {
+public:
+	Eigen::VectorXd gamma,beta;
+
+	Eigen::VectorXd g_grad_mean,b_grad_mean;
+	size_t grad_samples = 0;
+
+	double grad_inv_std = 0;
+	Eigen::VectorXd grad_x_hat;
+
+	LayerNorm(size_t in_dim) {
+		gamma = Eigen::VectorXd::Ones(in_dim);
+		beta = Eigen::VectorXd::Zero(in_dim);
+	}
+	Eigen::VectorXd forward(const Eigen::VectorXd& in) override {
+		double mean = in.mean();
+		double std = sqrt((in.array() - mean).array().pow(2).mean() + 1e-5);
+		Eigen::VectorXd norm = (in.array() - mean).array()/std;
+		return gamma.array()*norm.array() + beta.array();
+	}
+	Eigen::VectorXd grad_forward(const Eigen::VectorXd& x)
+	{
+		double mean = x.mean();
+
+		double var =
+			(x.array() - mean).square().mean();
+
+		grad_inv_std = 1.0 / sqrt(var + 1e-5);
+
+		grad_x_hat =
+			(x.array() - mean) * grad_inv_std;
+
+		return gamma.array() * grad_x_hat.array() + beta.array();
+	}
+	Eigen::VectorXd compute_gradients(const Eigen::VectorXd& flow_back) {
+
+		Eigen::VectorXd dx_gamma = flow_back.array() * gamma.array();
+
+		double mean1 = dx_gamma.mean();
+
+		double mean2 = (dx_gamma.array() * grad_x_hat.array()).mean();
+
+		grad_samples++;
+		double alpha = 1.0 / grad_samples;
+
+		g_grad_mean.array() += alpha * (flow_back.array() * grad_x_hat.array() - g_grad_mean.array());
+
+		b_grad_mean += alpha*(flow_back-b_grad_mean);
+
+		return (dx_gamma.array() - mean1 - grad_x_hat.array() * mean2) * grad_inv_std;
+	}
+	size_t param_size() const override {
+		return gamma.size() + beta.size();
+	}
+	void param_store(double* dest) const override {
+		memcpy(dest,gamma.data(),gamma.size() * sizeof(double));
+		memcpy(dest + gamma.size(),beta.data(),sizeof(double) * beta.size());
+	}
+	void param_load(double* src) override {
+		memcpy(gamma.data(),src,gamma.size() * sizeof(double));
+		memcpy(beta.data(),src + gamma.size(),beta.size() * sizeof(double));
+	}
+};
+
 class Softmax : public Pass {
 public:
 	Eigen::VectorXd activation;

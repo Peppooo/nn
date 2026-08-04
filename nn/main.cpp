@@ -12,7 +12,7 @@ using namespace std;
 mt19937 global_rng;
 
 int main() {
-	Sequential model = {{
+	Sequential model({
 		new Dense(784,256),
 		new ReLU(),
 		new Dropout(0.4),
@@ -23,7 +23,7 @@ int main() {
 
 		new Dense(128,10),
 		new Softmax(true)
-	}};
+	});
 
 
 	vector<Eigen::Vector<double,784>> train_X;
@@ -52,8 +52,8 @@ int main() {
 		for(int _i = 0; _i < train_X.size(); _i += 1) {
 			auto i = indecies[_i];
 			auto pred = model.grad_forward(train_X[i]);
-			//auto err = train_Y[i].array() / (-pred.array()); // cross entropy error partial derivative
-			cost += -(model.forward(pred).array().log()*train_Y[i].array()).sum(); // cross entropy error value
+			//auto err = train_Y[i].array() / (-pred.array()); // cross entropy cost partial derivative
+			cost += -(model.forward(pred).array().log()*train_Y[i].array()).sum(); // cross entropy cost value
 			model.compute_gradients(pred.array()-train_Y[i].array()); // cross entropy+softmax can be simplified to just y^-y
 
 			if(_i % batch_size == 0 && _i != 0) {
